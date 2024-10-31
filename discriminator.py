@@ -1,0 +1,59 @@
+import torch.nn as nn
+from modules import (
+    FeatureAttentionLayer,
+    TemporalAttentionLayer,
+    FeedForwardScore,
+    ConvLayer
+)
+
+class Discriminator(nn.Module):
+    """ GAT-GAN generator model class.
+    The generator is the encoder which maps the input time series to a latent space
+
+    :param n_features: Number of input features
+    :param window_size: Length of the input sequence
+    :param out_dim: Number of features to output
+    :param kernel_size: size of kernel to use in the 1-D convolution
+    :param feat_gat_embed_dim: embedding dimension (output dimension of linear transformation)
+           in feat-oriented GAT layer
+    :param time_gat_embed_dim: embedding dimension (output dimension of linear transformation)
+           in time-oriented GAT layer
+    :param dropout: dropout rate
+    :param alpha: negative slope used in the leaky relu activation function
+
+    """
+
+    def __init__(
+        self,
+        n_features,
+        seq_length,
+        fcn_dim,
+        n_layers,
+        kernel_size,
+        feat_gat_embed_dim=None,
+        time_gat_embed_dim=None,
+        dropout=0.2,
+        alpha=0.2
+    ):
+        super(Discriminator, self).__init__()
+        self.feature_gat = nn.ModuleList(
+            [FeatureAttentionLayer(n_features, seq_length, dropout, alpha, feat_gat_embed_dim) for i in
+             range(n_layers)])
+        self.temporal_gat = nn.ModuleList(
+            [TemporalAttentionLayer(n_features, seq_length, dropout, alpha, time_gat_embed_dim) for i in
+             range(n_layers)])
+        self.ff = FeedForwardScore(fcn_dim, n_features)
+        self.n_layers = n_layers
+        self.conv = nn.ModuleList([ConvLayer(n_features, kernel_size) for i in range(n_layers)])
+
+    def forward(self, x):
+        # x shape (b, n, k): b - batch size, n - sequence length, k - number of features
+        residual = x
+        for i in range(self.n_layers):
+            x = self.feature_gat[i](x) #remove for ablation 1
+            x = self.temporal_gat[i](x) #remove for ablation 2
+            x = x + residual
+        x = x.reshape(x.shape[0], -1)
+        residual = residual.reshape(residual.shape[0],-1)
+        x = self.ff(x,residual)
+        return x
